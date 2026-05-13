@@ -264,19 +264,7 @@ The core boundary is tenant isolation. Most business data belongs to an `Org`, a
 - More detail is in `docs/NOTIFICATIONS_REALTIME.md`.
 
 ## Current Status
-
-This repository is useful as a portfolio backend and internal implementation reference. It now installs, builds, lints, and passes the committed test suite in this workspace, but it should not be presented as production-ready open source until the remaining dependency audit and history-cleanup items are handled.
-
-Latest audit results from this workspace:
-
-- `npm.cmd ci` passed in the latest audit run.
-- `npm.cmd run build` passed in the latest audit run.
-- `npm.cmd run lint` passed.
-- `npm.cmd test -- --runInBand` passed: 78 test suites and 541 tests.
-- `npm.cmd audit fix` reduced the dependency audit from 64 vulnerabilities, including 2 critical, to 25 vulnerabilities with no critical findings.
-- `npm.cmd audit --audit-level=moderate` still fails with 25 vulnerabilities: 4 low, 15 moderate, and 6 high.
-
-The current tree has been cleaned of local assistant settings, a local schema dump, hardcoded private-looking local paths, and a hardcoded production API origin. If this repository is made public with existing git history, history should still be reviewed or rewritten because older commits contained local artifacts.
+This repository is a portfolio-friendly backend reference that installs, builds, lints, and runs its committed tests in this workspace. It is not positioned as production-ready open source yet; dependency upgrades and optional history cleanup are still in progress.
 
 ## Known Limitations
 
