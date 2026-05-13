@@ -268,12 +268,12 @@ This is a portfolio/open-source backend project. It installs, builds, lints, and
 
 ## Known Limitations
 
-- Dependency audit may still report high and moderate vulnerabilities. Remaining fixes require dependency upgrades in NestJS, Swagger, the Nest CLI toolchain, and transitive packages such as `multer`, `lodash`, `glob`, and `webpack`.
-- Seed data contains demo/default credentials. Use only for local development and rotate for any deployment.
+- Dependency audit may still report moderate issues in transitive packages. A production deployment should include dependency upgrade work and a security review.
+- Seed data contains demo/default credentials. Use only for local development and rotate before any deployment.
 - REST CORS is permissive in `src/main.ts` with `origin: true`; production deployments should tighten this.
-- The app has a liveness-style health endpoint but no separate readiness endpoint that checks database, queue, storage, or delivery dependencies.
-- Queue, email, push, and storage features are optional and configuration-dependent. Some paths fall back to noop behavior or raise `NotImplementedException` when storage is not configured.
-- Several docs describe migration-era compatibility routes and transitional ownership/role models. Public readers should verify which paths remain relevant.
+- The app exposes a liveness-style health endpoint but no dedicated readiness check for external dependencies.
+- Queue, email, push, and storage integrations are optional and configuration-dependent. Some paths are intentionally noop until configured.
+- Several docs include migration-era or compatibility notes. Public readers should verify which flows match the current product scope.
 
 ## Lessons Learned
 
