@@ -2,9 +2,9 @@
 
 Towerdesk Backend is a NestJS API for multi-tenant property operations. It models organizations, buildings, units, residents, leases, owners, service providers, maintenance requests, notifications, messaging, visitors, parking, and role-based access control.
 
-This repository is not just a starter scaffold. It contains a broad backend implementation with Prisma migrations, a sizeable test suite, Swagger decorators, Socket.IO realtime notifications, optional BullMQ workers, and S3-compatible storage hooks. It is also not publication-ready as-is; see [Current Status](#current-status) and [Known Limitations](#known-limitations).
+This repository is a portfolio-friendly reference implementation with Prisma migrations, a sizeable test suite, Swagger decorators, Socket.IO realtime notifications, optional BullMQ workers, and S3-compatible storage hooks. It should be reviewed before production use; see [Current Status](#current-status) and [Known Limitations](#known-limitations).
 
-## Demo Or Screenshots
+## Demo or Screenshots
 
 No public demo URL or screenshots are included yet.
 
@@ -93,7 +93,7 @@ The full variable list is documented in `.env.example`. Minimum local variables:
 ```env
 NODE_ENV=development
 PORT=3000
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/towerdesk
+DATABASE_URL=postgresql://USER:PASSWORD@localhost:5432/towerdesk
 JWT_ACCESS_SECRET=replace-me-local-access-secret
 JWT_REFRESH_SECRET=replace-me-local-refresh-secret
 JWT_ACCESS_TTL=900
@@ -264,21 +264,16 @@ The core boundary is tenant isolation. Most business data belongs to an `Org`, a
 - More detail is in `docs/NOTIFICATIONS_REALTIME.md`.
 
 ## Current Status
-This repository is a portfolio-friendly backend reference that installs, builds, lints, and runs its committed tests in this workspace. It is not positioned as production-ready open source yet; dependency upgrades and optional history cleanup are still in progress.
+This is a portfolio/open-source backend project. It installs, builds, lints, and runs its committed tests in this workspace. Review and harden it before any production deployment.
 
 ## Known Limitations
 
-- `package.json` intentionally keeps `"private": true` so this application is not accidentally published to npm.
-- `package.json` still says `"license": "UNLICENSED"` because no open-source license decision has been made.
-- There is no committed `LICENSE` file.
-- Dependency audit still reports high and moderate vulnerabilities. Remaining fixes require dependency upgrade work, including NestJS-related packages, Swagger, the Nest CLI toolchain, and transitive packages such as `multer`, `lodash`, `glob`, and `webpack`.
-- Historical git commits contained root-level artifacts such as a local schema dump, PDF/CSV artifacts, and local assistant settings. The current tree removes the local settings file and schema dump, but public release may still require history rewriting if those artifacts are sensitive.
-- A local `.env` file exists in this workspace. It is ignored by `.gitignore`, but secrets should still be rotated if there is any chance they were shared outside the machine.
-- Seed data contains demo/default credentials. That is acceptable for local development only if clearly documented and never used in production.
-- REST CORS is currently permissive in `src/main.ts` with `origin: true`; production deployments should tighten this.
+- Dependency audit may still report high and moderate vulnerabilities. Remaining fixes require dependency upgrades in NestJS, Swagger, the Nest CLI toolchain, and transitive packages such as `multer`, `lodash`, `glob`, and `webpack`.
+- Seed data contains demo/default credentials. Use only for local development and rotate for any deployment.
+- REST CORS is permissive in `src/main.ts` with `origin: true`; production deployments should tighten this.
 - The app has a liveness-style health endpoint but no separate readiness endpoint that checks database, queue, storage, or delivery dependencies.
-- Queue, email, push, and storage features are partly optional and configuration-dependent. Some paths fall back to noop behavior or raise `NotImplementedException` when storage is not configured.
-- Several docs describe migration-era compatibility routes and transitional ownership/role models. Public readers will need a clearer versioning story.
+- Queue, email, push, and storage features are optional and configuration-dependent. Some paths fall back to noop behavior or raise `NotImplementedException` when storage is not configured.
+- Several docs describe migration-era compatibility routes and transitional ownership/role models. Public readers should verify which paths remain relevant.
 
 ## Lessons Learned
 
@@ -290,4 +285,4 @@ This repository is a portfolio-friendly backend reference that installs, builds,
 
 ## License
 
-No open-source license is currently provided. The package is marked `UNLICENSED`, so all rights are reserved unless the owner adds a license file and updates `package.json`.
+Licensed under the MIT License. See [LICENSE](LICENSE).
