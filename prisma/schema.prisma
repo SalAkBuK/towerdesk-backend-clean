@@ -1,0 +1,1660 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                                         String                                 @id @default(uuid())
+  email                                      String                                 @unique
+  passwordHash                               String
+  refreshTokenHash                           String?
+  name                                       String?
+  avatarUrl                                  String?
+  phone                                      String?
+  orgId                                      String?
+  mustChangePassword                         Boolean                                @default(false)
+  isActive                                   Boolean                                @default(true)
+  createdAt                                  DateTime                               @default(now())
+  updatedAt                                  DateTime                               @updatedAt
+  org                                        Org?                                   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  accessAssignments                          UserAccessAssignment[]
+  userPermissions                            UserPermission[]
+  residentOccupancies                        Occupancy[]
+  maintenanceRequestsCreated                 MaintenanceRequest[]                   @relation("MaintenanceRequestCreator")
+  maintenanceRequestsAssigned                MaintenanceRequest[]                   @relation("MaintenanceRequestAssignee")
+  maintenanceRequestsServiceProviderAssigned MaintenanceRequest[]                   @relation("MaintenanceRequestServiceProviderAssignee")
+  maintenanceRequestsEstimateRequested       MaintenanceRequest[]                   @relation("MaintenanceRequestEstimateRequester")
+  maintenanceRequestsEstimateSubmitted       MaintenanceRequest[]                   @relation("MaintenanceRequestEstimateSubmitter")
+  maintenanceRequestsOwnerApprovalRequested  MaintenanceRequest[]                   @relation("MaintenanceRequestOwnerApprovalRequester")
+  maintenanceRequestsOwnerApprovalDecided    MaintenanceRequest[]                   @relation("MaintenanceRequestOwnerApprovalDecider")
+  maintenanceRequestsOwnerApprovalOverridden MaintenanceRequest[]                   @relation("MaintenanceRequestOwnerApprovalOverrider")
+  maintenanceRequestComments                 MaintenanceRequestComment[]
+  maintenanceRequestCommentReadStates        MaintenanceRequestCommentReadState[]
+  maintenanceRequestAttachments              MaintenanceRequestAttachment[]
+  maintenanceRequestOwnerApprovalAudits      MaintenanceRequestOwnerApprovalAudit[] @relation("MaintenanceRequestOwnerApprovalAuditActor")
+  notifications                              Notification[]                         @relation("NotificationRecipient")
+  broadcastsSent                             Broadcast[]                            @relation("BroadcastSender")
+  conversationParticipations                 ConversationParticipant[]
+  messagesSent                               Message[]                              @relation("MessageSender")
+  residentProfile                            ResidentProfile?
+  primaryContracts                           Lease[]                                @relation("LeasePrimaryResident")
+  moveInRequests                             MoveInRequest[]                        @relation("MoveInRequestResident")
+  moveOutRequests                            MoveOutRequest[]                       @relation("MoveOutRequestResident")
+  reviewedMoveInRequests                     MoveInRequest[]                        @relation("MoveInRequestReviewer")
+  reviewedMoveOutRequests                    MoveOutRequest[]                       @relation("MoveOutRequestReviewer")
+  leaseHistoryChanges                        LeaseHistory[]
+  leaseActivityChanges                       LeaseActivity[]
+  passwordResetTokens                        PasswordResetToken[]
+  residentInvitesReceived                    ResidentInvite[]                       @relation("ResidentInviteRecipient")
+  residentInvitesCreated                     ResidentInvite[]                       @relation("ResidentInviteCreator")
+  pushDevices                                PushDevice[]
+  serviceProviderMemberships                 ServiceProviderUser[]
+  serviceProviderAccessGrants                ServiceProviderAccessGrant[]           @relation("ServiceProviderAccessGrantUser")
+  grantedServiceProviderAccessGrants         ServiceProviderAccessGrant[]           @relation("ServiceProviderAccessGrantGrantedBy")
+  disabledServiceProviderAccessGrants        ServiceProviderAccessGrant[]           @relation("ServiceProviderAccessGrantDisabledBy")
+  ownerAccessGrants                          OwnerAccessGrant[]                     @relation("OwnerAccessGrantUser")
+  grantedOwnerAccessGrants                   OwnerAccessGrant[]                     @relation("OwnerAccessGrantGrantedBy")
+  disabledOwnerAccessGrants                  OwnerAccessGrant[]                     @relation("OwnerAccessGrantDisabledBy")
+  ownerAccessGrantAuditActions               OwnerAccessGrantAudit[]                @relation("OwnerAccessGrantAuditActor")
+  ownerRegistryLookupAudits                  OwnerRegistryLookupAudit[]             @relation("OwnerRegistryLookupAuditActor")
+  ownerRequestCommentReadStates              OwnerRequestCommentReadState[]
+
+  @@index([orgId])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  purpose   String    @default("PASSWORD_RESET")
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([userId, purpose, expiresAt])
+  @@index([expiresAt])
+}
+
+enum DeliveryTaskKind {
+  AUTH_PASSWORD_EMAIL
+  PUSH_NOTIFICATION
+  BROADCAST_FANOUT
+}
+
+enum DeliveryTaskStatus {
+  PENDING
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  RETRIED
+}
+
+model DeliveryTask {
+  id                  String                @id @default(uuid())
+  kind                DeliveryTaskKind
+  status              DeliveryTaskStatus    @default(PENDING)
+  queueName           String
+  jobName             String
+  orgId               String?
+  userId              String?
+  referenceType       String?
+  referenceId         String?
+  payload             Json
+  attemptCount        Int                   @default(0)
+  maxAttempts         Int                   @default(5)
+  queuedAt            DateTime              @default(now())
+  lastAttemptAt       DateTime?
+  processingStartedAt DateTime?
+  completedAt         DateTime?
+  lastError           String?
+  retriedAt           DateTime?
+  replacedByTaskId    String?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  pushReceipts        PushDeliveryReceipt[]
+
+  @@index([status, kind, queuedAt])
+  @@index([referenceType, referenceId])
+  @@index([orgId, kind, createdAt])
+  @@index([userId, kind, createdAt])
+  @@index([replacedByTaskId])
+}
+
+enum ResidentInviteStatus {
+  SENT
+  FAILED
+  ACCEPTED
+}
+
+model ResidentInvite {
+  id              String               @id @default(uuid())
+  orgId           String
+  userId          String
+  createdByUserId String?
+  email           String
+  status          ResidentInviteStatus @default(SENT)
+  tokenHash       String               @unique
+  expiresAt       DateTime
+  sentAt          DateTime             @default(now())
+  acceptedAt      DateTime?
+  failedAt        DateTime?
+  failureReason   String?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  org             Org                  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user            User                 @relation("ResidentInviteRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  createdByUser   User?                @relation("ResidentInviteCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, createdAt])
+  @@index([userId, createdAt])
+  @@index([orgId, userId, createdAt])
+  @@index([status, expiresAt])
+}
+
+model Org {
+  id                                    String                                 @id @default(uuid())
+  name                                  String
+  logoUrl                               String?
+  businessName                          String?
+  businessType                          OrgBusinessType?
+  tradeLicenseNumber                    String?
+  vatRegistrationNumber                 String?
+  registeredOfficeAddress               String?
+  city                                  String?
+  officePhoneNumber                     String?
+  businessEmailAddress                  String?
+  website                               String?
+  ownerName                             String?
+  createdAt                             DateTime                               @default(now())
+  updatedAt                             DateTime                               @updatedAt
+  users                                 User[]
+  buildings                             Building[]
+  unitTypes                             UnitType[]
+  owners                                Owner[]
+  maintenanceRequests                   MaintenanceRequest[]
+  maintenanceRequestComments            MaintenanceRequestComment[]
+  maintenanceRequestAttachments         MaintenanceRequestAttachment[]
+  maintenanceRequestOwnerApprovalAudits MaintenanceRequestOwnerApprovalAudit[]
+  notifications                         Notification[]
+  broadcasts                            Broadcast[]
+  conversations                         Conversation[]
+  roleTemplates                         RoleTemplate[]
+  parkingSlots                          ParkingSlot[]
+  parkingAllocations                    ParkingAllocation[]
+  vehicles                              Vehicle[]
+  visitors                              Visitor[]
+  leases                                Lease[]
+  residentProfiles                      ResidentProfile[]
+  leaseDocuments                        LeaseDocument[]
+  leaseHistories                        LeaseHistory[]
+  leaseActivities                       LeaseActivity[]
+  leaseAdditionalTerms                  LeaseAdditionalTerm[]
+  moveInRequests                        MoveInRequest[]
+  moveOutRequests                       MoveOutRequest[]
+  residentInvites                       ResidentInvite[]
+  pushDevices                           PushDevice[]
+  unitOwnerships                        UnitOwnership[]
+  ownerRegistryLookupAudits             OwnerRegistryLookupAudit[]
+}
+
+enum PartyType {
+  INDIVIDUAL
+  COMPANY
+}
+
+enum PartyStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum PartyIdentifierType {
+  EMIRATES_ID
+  PASSPORT
+  TRADE_LICENSE
+  VAT_TRN
+  OTHER
+}
+
+enum OwnerAccessGrantStatus {
+  PENDING
+  ACTIVE
+  DISABLED
+}
+
+enum OwnerAccessGrantAuditAction {
+  INVITED
+  LINKED
+  ACTIVATED
+  DISABLED
+  RESENT
+}
+
+enum ServiceProviderUserRole {
+  ADMIN
+  WORKER
+}
+
+enum ServiceProviderAccessGrantStatus {
+  PENDING
+  ACTIVE
+  DISABLED
+}
+
+enum OwnerRegistryLookupResultStatus {
+  MATCH_FOUND
+  NO_MATCH
+}
+
+enum PushProvider {
+  EXPO
+}
+
+enum PushPlatform {
+  IOS
+  ANDROID
+  WEB
+  UNKNOWN
+}
+
+enum PushDeliveryReceiptStatus {
+  PENDING
+  DELIVERED
+  ERROR
+}
+
+model PushDevice {
+  id         String       @id @default(uuid())
+  orgId      String?
+  userId     String
+  provider   PushProvider
+  platform   PushPlatform @default(UNKNOWN)
+  token      String       @unique
+  deviceId   String?
+  appId      String?
+  isActive   Boolean      @default(true)
+  lastSeenAt DateTime     @default(now())
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  org        Org?         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, userId, isActive])
+  @@index([userId, isActive])
+  @@index([lastSeenAt])
+}
+
+model PushDeliveryReceipt {
+  id                String                    @id @default(uuid())
+  taskId            String
+  provider          PushProvider
+  platform          PushPlatform              @default(UNKNOWN)
+  userId            String?
+  pushDeviceId      String?
+  deviceTokenMasked String?
+  providerTicketId  String?                   @unique
+  providerReceiptId String?
+  status            PushDeliveryReceiptStatus @default(PENDING)
+  errorCode         String?
+  errorMessage      String?
+  details           Json?
+  checkedAt         DateTime?
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+  task              DeliveryTask              @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, status, createdAt])
+  @@index([provider, status, checkedAt])
+}
+
+enum OrgBusinessType {
+  OWNER
+  PROPERTY_MANAGEMENT
+  FACILITY_MANAGEMENT
+  DEVELOPER
+}
+
+model Building {
+  id                   String                    @id @default(uuid())
+  orgId                String
+  name                 String
+  city                 String
+  emirate              String?
+  country              String                    @default("ARE")
+  timezone             String                    @default("Asia/Dubai")
+  floors               Int?
+  unitsCount           Int?
+  createdAt            DateTime                  @default(now())
+  updatedAt            DateTime                  @updatedAt
+  org                  Org                       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  units                Unit[]
+  amenities            BuildingAmenity[]
+  accessAssignments    UserAccessAssignment[]    @relation("BuildingScopedAccessAssignments")
+  occupancies          Occupancy[]
+  maintenanceRequests  MaintenanceRequest[]
+  parkingSlots         ParkingSlot[]
+  parkingAllocations   ParkingAllocation[]
+  visitors             Visitor[]
+  conversations        Conversation[]
+  leases               Lease[]
+  moveInRequests       MoveInRequest[]
+  moveOutRequests      MoveOutRequest[]
+  residentProfiles     ResidentProfile[]
+  serviceProviderLinks ServiceProviderBuilding[]
+
+  @@index([orgId])
+}
+
+model Unit {
+  id                     String               @id @default(uuid())
+  buildingId             String
+  label                  String
+  unitTypeId             String?
+  ownerId                String?
+  floor                  Int?
+  status                 UnitStatus           @default(AVAILABLE)
+  notes                  String?
+  maintenancePayer       MaintenancePayer?
+  unitSize               Decimal?             @db.Decimal(12, 2)
+  unitSizeUnit           UnitSizeUnit         @default(SQ_FT)
+  bedrooms               Int?
+  bathrooms              Int?
+  balcony                Boolean?
+  kitchenType            KitchenType?
+  furnishedStatus        FurnishedStatus?
+  rentAnnual             Decimal?             @db.Decimal(12, 2)
+  paymentFrequency       PaymentFrequency?
+  securityDepositAmount  Decimal?             @db.Decimal(12, 2)
+  serviceChargePerUnit   Decimal?             @db.Decimal(12, 2)
+  vatApplicable          Boolean?
+  electricityMeterNumber String?
+  waterMeterNumber       String?
+  gasMeterNumber         String?
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+  building               Building             @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  unitType               UnitType?            @relation(fields: [unitTypeId], references: [id], onDelete: SetNull)
+  owner                  Owner?               @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  amenities              UnitAmenity[]
+  ownerships             UnitOwnership[]
+  occupancies            Occupancy[]
+  leases                 Lease[]
+  moveInRequests         MoveInRequest[]
+  moveOutRequests        MoveOutRequest[]
+  parkingAllocations     ParkingAllocation[]
+  maintenanceRequests    MaintenanceRequest[]
+  visitors               Visitor[]
+
+  @@unique([buildingId, label])
+  @@index([buildingId])
+}
+
+model Visitor {
+  id                String        @id @default(uuid())
+  orgId             String
+  buildingId        String
+  unitId            String
+  type              VisitorType
+  status            VisitorStatus @default(EXPECTED)
+  visitorName       String
+  phoneNumber       String
+  emiratesId        String?
+  vehicleNumber     String?
+  expectedArrivalAt DateTime?
+  notes             String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  org               Org           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  building          Building      @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  unit              Unit          @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, buildingId])
+  @@index([orgId, createdAt])
+  @@index([unitId])
+}
+
+model BuildingAmenity {
+  id         String        @id @default(uuid())
+  buildingId String
+  name       String
+  isActive   Boolean       @default(true)
+  isDefault  Boolean       @default(false)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  building   Building      @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  unitLinks  UnitAmenity[]
+
+  @@unique([buildingId, name])
+  @@index([buildingId])
+}
+
+model UnitAmenity {
+  unitId    String
+  amenityId String
+  createdAt DateTime        @default(now())
+  unit      Unit            @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  amenity   BuildingAmenity @relation(fields: [amenityId], references: [id], onDelete: Cascade)
+
+  @@id([unitId, amenityId])
+  @@index([amenityId])
+}
+
+model UnitType {
+  id        String   @id @default(uuid())
+  orgId     String
+  name      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  units     Unit[]
+
+  @@unique([orgId, name])
+  @@index([orgId])
+}
+
+model Owner {
+  id                         String                      @id @default(uuid())
+  orgId                      String
+  partyId                    String?
+  name                       String
+  email                      String?
+  phone                      String?
+  address                    String?
+  isActive                   Boolean                     @default(true)
+  displayNameOverride        String?
+  contactEmailOverride       String?
+  contactPhoneOverride       String?
+  notes                      String?
+  createdAt                  DateTime                    @default(now())
+  updatedAt                  DateTime                    @updatedAt
+  org                        Org                         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  party                      Party?                      @relation(fields: [partyId], references: [id], onDelete: SetNull)
+  units                      Unit[]
+  accessGrants               OwnerAccessGrant[]
+  accessGrantAudits          OwnerAccessGrantAudit[]
+  unitOwnerships             UnitOwnership[]
+  maintenanceRequestComments MaintenanceRequestComment[] @relation("MaintenanceRequestCommentOwner")
+
+  @@unique([orgId, partyId])
+  @@index([orgId])
+  @@index([partyId])
+  @@index([orgId, isActive])
+}
+
+model Party {
+  id                  String                     @id @default(uuid())
+  type                PartyType
+  displayNameEn       String
+  displayNameAr       String?
+  primaryEmail        String?
+  primaryPhone        String?
+  status              PartyStatus                @default(ACTIVE)
+  createdAt           DateTime                   @default(now())
+  updatedAt           DateTime                   @updatedAt
+  identifiers         PartyIdentifier[]
+  owners              Owner[]
+  matchedLookupAudits OwnerRegistryLookupAudit[]
+
+  @@index([type])
+  @@index([displayNameEn])
+  @@index([primaryEmail])
+}
+
+model PartyIdentifier {
+  id                   String              @id @default(uuid())
+  partyId              String
+  identifierType       PartyIdentifierType
+  countryCode          String?
+  issuingAuthority     String?
+  valueEncrypted       String
+  lookupHmac           String
+  last4                String?
+  isPrimary            Boolean             @default(false)
+  isVerified           Boolean             @default(false)
+  normalizationVersion Int                 @default(1)
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  deletedAt            DateTime?
+  party                Party               @relation(fields: [partyId], references: [id], onDelete: Cascade)
+
+  @@index([partyId, identifierType])
+  @@index([identifierType, countryCode, issuingAuthority, lookupHmac])
+}
+
+model OwnerAccessGrant {
+  id                 String                  @id @default(uuid())
+  userId             String?
+  ownerId            String
+  status             OwnerAccessGrantStatus  @default(PENDING)
+  inviteEmail        String?
+  invitedAt          DateTime?
+  acceptedAt         DateTime?
+  grantedByUserId    String?
+  disabledAt         DateTime?
+  disabledByUserId   String?
+  verificationMethod String?
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+  user               User?                   @relation("OwnerAccessGrantUser", fields: [userId], references: [id], onDelete: Cascade)
+  owner              Owner                   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  grantedByUser      User?                   @relation("OwnerAccessGrantGrantedBy", fields: [grantedByUserId], references: [id], onDelete: SetNull)
+  disabledByUser     User?                   @relation("OwnerAccessGrantDisabledBy", fields: [disabledByUserId], references: [id], onDelete: SetNull)
+  audits             OwnerAccessGrantAudit[]
+
+  @@index([userId, status])
+  @@index([ownerId, status])
+  @@index([createdAt])
+}
+
+model OwnerAccessGrantAudit {
+  id                 String                      @id @default(uuid())
+  grantId            String
+  ownerId            String
+  actorUserId        String?
+  action             OwnerAccessGrantAuditAction
+  fromStatus         OwnerAccessGrantStatus?
+  toStatus           OwnerAccessGrantStatus
+  userId             String?
+  inviteEmail        String?
+  verificationMethod String?
+  createdAt          DateTime                    @default(now())
+  grant              OwnerAccessGrant            @relation(fields: [grantId], references: [id], onDelete: Cascade)
+  owner              Owner                       @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  actorUser          User?                       @relation("OwnerAccessGrantAuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([ownerId, createdAt])
+  @@index([grantId, createdAt])
+  @@index([actorUserId])
+}
+
+model ServiceProvider {
+  id                  String                       @id @default(uuid())
+  name                String
+  serviceCategory     String?
+  contactName         String?
+  contactEmail        String?
+  contactPhone        String?
+  notes               String?
+  isActive            Boolean                      @default(true)
+  createdAt           DateTime                     @default(now())
+  updatedAt           DateTime                     @updatedAt
+  buildings           ServiceProviderBuilding[]
+  users               ServiceProviderUser[]
+  accessGrants        ServiceProviderAccessGrant[]
+  maintenanceRequests MaintenanceRequest[]
+
+  @@index([isActive])
+  @@index([name])
+}
+
+model ServiceProviderBuilding {
+  serviceProviderId String
+  buildingId        String
+  createdAt         DateTime        @default(now())
+  serviceProvider   ServiceProvider @relation(fields: [serviceProviderId], references: [id], onDelete: Cascade)
+  building          Building        @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  @@id([serviceProviderId, buildingId])
+  @@index([buildingId])
+}
+
+model ServiceProviderUser {
+  serviceProviderId String
+  userId            String
+  role              ServiceProviderUserRole @default(WORKER)
+  isActive          Boolean                 @default(true)
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+  serviceProvider   ServiceProvider         @relation(fields: [serviceProviderId], references: [id], onDelete: Cascade)
+  user              User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([serviceProviderId, userId])
+  @@index([userId, isActive])
+  @@index([serviceProviderId, role, isActive])
+}
+
+model ServiceProviderAccessGrant {
+  id                 String                           @id @default(uuid())
+  userId             String?
+  serviceProviderId  String
+  status             ServiceProviderAccessGrantStatus @default(PENDING)
+  inviteEmail        String?
+  invitedAt          DateTime?
+  acceptedAt         DateTime?
+  grantedByUserId    String?
+  disabledAt         DateTime?
+  disabledByUserId   String?
+  verificationMethod String?
+  createdAt          DateTime                         @default(now())
+  updatedAt          DateTime                         @updatedAt
+  user               User?                            @relation("ServiceProviderAccessGrantUser", fields: [userId], references: [id], onDelete: Cascade)
+  serviceProvider    ServiceProvider                  @relation(fields: [serviceProviderId], references: [id], onDelete: Cascade)
+  grantedByUser      User?                            @relation("ServiceProviderAccessGrantGrantedBy", fields: [grantedByUserId], references: [id], onDelete: SetNull)
+  disabledByUser     User?                            @relation("ServiceProviderAccessGrantDisabledBy", fields: [disabledByUserId], references: [id], onDelete: SetNull)
+
+  @@index([userId, status])
+  @@index([serviceProviderId, status])
+  @@index([createdAt])
+}
+
+model OwnerRegistryLookupAudit {
+  id             String                          @id @default(uuid())
+  actorUserId    String
+  actorOrgId     String
+  identifierType PartyIdentifierType
+  lookupHmac     String
+  resultStatus   OwnerRegistryLookupResultStatus
+  matchedPartyId String?
+  createdAt      DateTime                        @default(now())
+  actorUser      User                            @relation("OwnerRegistryLookupAuditActor", fields: [actorUserId], references: [id], onDelete: Cascade)
+  actorOrg       Org                             @relation(fields: [actorOrgId], references: [id], onDelete: Cascade)
+  matchedParty   Party?                          @relation(fields: [matchedPartyId], references: [id], onDelete: SetNull)
+
+  @@index([actorUserId, createdAt])
+  @@index([actorOrgId, createdAt])
+  @@index([identifierType, createdAt])
+}
+
+model UnitOwnership {
+  id        String    @id @default(uuid())
+  orgId     String
+  unitId    String
+  ownerId   String
+  startDate DateTime
+  endDate   DateTime?
+  isPrimary Boolean?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  org       Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  unit      Unit      @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  owner     Owner     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, ownerId, startDate, endDate])
+  @@index([orgId, unitId, startDate, endDate])
+  @@index([unitId, endDate])
+}
+
+enum MaintenancePayer {
+  OWNER
+  TENANT
+  BUILDING
+}
+
+enum VisitorType {
+  GUEST_VISITOR
+  DELIVERY_RIDER
+  COURIER_PARCEL
+  SERVICE_PROVIDER
+  MAINTENANCE_TECHNICIAN
+  HOUSEKEEPING_CLEANER
+  CONTRACTOR_WORKER
+  DRIVER_PICKUP
+  SECURITY_STAFF_EXTERNAL
+  OTHER
+}
+
+enum VisitorStatus {
+  EXPECTED
+  ARRIVED
+  COMPLETED
+  CANCELLED
+}
+
+enum KitchenType {
+  OPEN
+  CLOSED
+}
+
+enum FurnishedStatus {
+  UNFURNISHED
+  SEMI_FURNISHED
+  FULLY_FURNISHED
+}
+
+enum PaymentFrequency {
+  MONTHLY
+  QUARTERLY
+  SEMI_ANNUAL
+  ANNUAL
+}
+
+enum LeaseStatus {
+  DRAFT
+  ACTIVE
+  ENDED
+  CANCELLED
+}
+
+enum PropertyUsage {
+  INDUSTRIAL
+  COMMERCIAL
+  RESIDENTIAL
+}
+
+enum LeaseHistoryAction {
+  CREATED
+  UPDATED
+  MOVED_OUT
+}
+
+enum LeaseActivityAction {
+  MOVE_IN
+  MOVE_OUT
+  MOVE_IN_REQUEST_CREATED
+  MOVE_IN_REQUEST_APPROVED
+  MOVE_IN_REQUEST_REJECTED
+  MOVE_OUT_REQUEST_CREATED
+  MOVE_OUT_REQUEST_APPROVED
+  MOVE_OUT_REQUEST_REJECTED
+  CONTRACT_ACTIVATED
+  CONTRACT_CANCELLED
+  DOCUMENT_ADDED
+  DOCUMENT_DELETED
+  ACCESS_CARD_ISSUED
+  ACCESS_CARD_STATUS_CHANGED
+  ACCESS_CARD_DELETED
+  PARKING_STICKER_ISSUED
+  PARKING_STICKER_STATUS_CHANGED
+  PARKING_STICKER_DELETED
+  OCCUPANTS_REPLACED
+  PARKING_ALLOCATED
+  PARKING_ALLOCATION_ENDED
+  VEHICLE_ADDED
+  VEHICLE_UPDATED
+  VEHICLE_DELETED
+}
+
+enum LeaseActivitySource {
+  USER
+  SYSTEM
+}
+
+enum UnitStatus {
+  AVAILABLE
+  OCCUPIED
+  UNDER_MAINTENANCE
+  BLOCKED
+}
+
+enum ServiceChargesPaidBy {
+  OWNER
+  TENANT
+}
+
+enum YesNo {
+  YES
+  NO
+}
+
+enum ConditionStatus {
+  OK
+  REPAIR_NEEDED
+}
+
+enum ApprovalStatus {
+  APPROVED
+  PENDING
+  REJECTED
+}
+
+enum RefundMethod {
+  BANK_TRANSFER
+  CHEQUE
+  CASH
+}
+
+enum LeaseDocumentType {
+  EMIRATES_ID_COPY
+  PASSPORT_COPY
+  SIGNED_TENANCY_CONTRACT
+  CHEQUE_COPY
+  OTHER
+}
+
+enum AccessItemStatus {
+  ISSUED
+  RETURNED
+  DEACTIVATED
+}
+
+enum MoveRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+  COMPLETED
+}
+
+enum UnitSizeUnit {
+  SQ_FT
+}
+
+enum ParkingSlotType {
+  CAR
+  BIKE
+  EV
+}
+
+enum AccessScopeType {
+  ORG
+  BUILDING
+}
+
+enum OccupancyStatus {
+  ACTIVE
+  ENDED
+}
+
+model Occupancy {
+  id                         String               @id @default(uuid())
+  buildingId                 String
+  unitId                     String
+  residentUserId             String
+  status                     OccupancyStatus      @default(ACTIVE)
+  startAt                    DateTime             @default(now())
+  endAt                      DateTime?
+  createdAt                  DateTime             @default(now())
+  updatedAt                  DateTime             @updatedAt
+  building                   Building             @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  unit                       Unit                 @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  residentUser               User                 @relation(fields: [residentUserId], references: [id], onDelete: Cascade)
+  parkingAllocations         ParkingAllocation[]
+  vehicles                   Vehicle[]
+  lease                      Lease?
+  maintenanceRequestsCreated MaintenanceRequest[] @relation("MaintenanceRequestCreationOccupancy")
+
+  @@index([buildingId])
+  @@index([unitId])
+  @@index([residentUserId])
+}
+
+model Lease {
+  id                         String                @id @default(uuid())
+  orgId                      String
+  buildingId                 String
+  unitId                     String
+  occupancyId                String?               @unique
+  residentUserId             String?
+  status                     LeaseStatus           @default(ACTIVE)
+  ijariId                    String?
+  contractDate               DateTime?
+  propertyUsage              PropertyUsage?
+  ownerNameSnapshot          String?
+  landlordNameSnapshot       String?
+  tenantNameSnapshot         String?
+  tenantEmailSnapshot        String?
+  landlordEmailSnapshot      String?
+  tenantPhoneSnapshot        String?
+  landlordPhoneSnapshot      String?
+  buildingNameSnapshot       String?
+  locationCommunity          String?
+  propertySizeSqm            Decimal?              @db.Decimal(10, 2)
+  propertyTypeLabel          String?
+  propertyNumber             String?
+  premisesNoDewa             String?
+  plotNo                     String?
+  contractValue              Decimal?              @db.Decimal(12, 2)
+  paymentModeText            String?
+  leaseStartDate             DateTime
+  leaseEndDate               DateTime
+  tenancyRegistrationExpiry  DateTime?
+  noticeGivenDate            DateTime?
+  annualRent                 Decimal               @db.Decimal(12, 2)
+  paymentFrequency           PaymentFrequency
+  numberOfCheques            Int?
+  securityDepositAmount      Decimal               @db.Decimal(12, 2)
+  internetTvProvider         String?
+  serviceChargesPaidBy       ServiceChargesPaidBy?
+  vatApplicable              Boolean?
+  notes                      String?
+  firstPaymentReceived       YesNo?
+  firstPaymentAmount         Decimal?              @db.Decimal(12, 2)
+  depositReceived            YesNo?
+  depositReceivedAmount      Decimal?              @db.Decimal(12, 2)
+  actualMoveOutDate          DateTime?
+  forwardingPhone            String?
+  forwardingEmail            String?
+  forwardingAddress          String?
+  finalElectricityReading    String?
+  finalWaterReading          String?
+  finalGasReading            String?
+  wallsCondition             ConditionStatus?
+  floorCondition             ConditionStatus?
+  kitchenCondition           ConditionStatus?
+  bathroomCondition          ConditionStatus?
+  doorsLocksCondition        ConditionStatus?
+  keysReturned               YesNo?
+  accessCardsReturnedCount   Int?
+  parkingStickersReturned    YesNo?
+  damageDescription          String?
+  damageCharges              Decimal?              @db.Decimal(12, 2)
+  pendingRent                Decimal?              @db.Decimal(12, 2)
+  pendingUtilities           Decimal?              @db.Decimal(12, 2)
+  pendingServiceFines        Decimal?              @db.Decimal(12, 2)
+  totalDeductions            Decimal?              @db.Decimal(12, 2)
+  netRefund                  Decimal?              @db.Decimal(12, 2)
+  inspectionDoneBy           String?
+  inspectionDate             DateTime?
+  managerApproval            ApprovalStatus?
+  refundMethod               RefundMethod?
+  refundDate                 DateTime?
+  adminNotes                 String?
+  createdAt                  DateTime              @default(now())
+  updatedAt                  DateTime              @updatedAt
+  org                        Org                   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  building                   Building              @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  unit                       Unit                  @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  occupancy                  Occupancy?            @relation(fields: [occupancyId], references: [id], onDelete: Cascade)
+  residentUser               User?                 @relation("LeasePrimaryResident", fields: [residentUserId], references: [id], onDelete: SetNull)
+  documents                  LeaseDocument[]
+  accessCards                LeaseAccessCard[]
+  parkingStickers            LeaseParkingSticker[]
+  occupants                  LeaseOccupant[]
+  additionalTerms            LeaseAdditionalTerm[]
+  moveInRequests             MoveInRequest[]
+  moveOutRequests            MoveOutRequest[]
+  history                    LeaseHistory[]
+  activities                 LeaseActivity[]
+  maintenanceRequestsCreated MaintenanceRequest[]  @relation("MaintenanceRequestCreationLease")
+
+  @@unique([orgId, ijariId])
+  @@index([orgId, buildingId])
+  @@index([orgId, createdAt])
+  @@index([unitId])
+  @@index([occupancyId])
+  @@index([residentUserId])
+}
+
+model LeaseHistory {
+  id              String             @id @default(uuid())
+  orgId           String
+  leaseId         String
+  action          LeaseHistoryAction
+  changedByUserId String?
+  changes         Json
+  createdAt       DateTime           @default(now())
+  org             Org                @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  lease           Lease              @relation(fields: [leaseId], references: [id], onDelete: Cascade)
+  changedByUser   User?              @relation(fields: [changedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([leaseId])
+  @@index([orgId, leaseId, createdAt])
+}
+
+model LeaseActivity {
+  id              String              @id @default(uuid())
+  orgId           String
+  leaseId         String
+  action          LeaseActivityAction
+  source          LeaseActivitySource @default(USER)
+  changedByUserId String?
+  payload         Json
+  createdAt       DateTime            @default(now())
+  org             Org                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  lease           Lease               @relation(fields: [leaseId], references: [id], onDelete: Cascade)
+  changedByUser   User?               @relation(fields: [changedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([leaseId])
+  @@index([orgId, leaseId, createdAt])
+}
+
+model ResidentProfile {
+  id                    String    @id @default(uuid())
+  orgId                 String
+  userId                String    @unique
+  preferredBuildingId   String?
+  emiratesIdNumber      String?
+  passportNumber        String?
+  nationality           String?
+  dateOfBirth           DateTime?
+  currentAddress        String?
+  emergencyContactName  String?
+  emergencyContactPhone String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  org                   Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  preferredBuilding     Building? @relation(fields: [preferredBuildingId], references: [id], onDelete: SetNull)
+
+  @@index([orgId])
+  @@index([userId])
+  @@index([preferredBuildingId])
+}
+
+model LeaseDocument {
+  id        String            @id @default(uuid())
+  leaseId   String
+  orgId     String
+  type      LeaseDocumentType
+  fileName  String
+  mimeType  String
+  sizeBytes Int
+  url       String
+  createdAt DateTime          @default(now())
+  lease     Lease             @relation(fields: [leaseId], references: [id], onDelete: Cascade)
+  org       Org               @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([leaseId])
+  @@index([orgId])
+  @@index([leaseId, type])
+}
+
+model LeaseAccessCard {
+  id         String           @id @default(uuid())
+  leaseId    String
+  cardNumber String
+  status     AccessItemStatus @default(ISSUED)
+  issuedAt   DateTime         @default(now())
+  returnedAt DateTime?
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+  lease      Lease            @relation(fields: [leaseId], references: [id], onDelete: Cascade)
+
+  @@unique([leaseId, cardNumber])
+  @@index([leaseId])
+  @@index([leaseId, status])
+}
+
+model LeaseParkingSticker {
+  id            String           @id @default(uuid())
+  leaseId       String
+  stickerNumber String
+  status        AccessItemStatus @default(ISSUED)
+  issuedAt      DateTime         @default(now())
+  returnedAt    DateTime?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  lease         Lease            @relation(fields: [leaseId], references: [id], onDelete: Cascade)
+
+  @@unique([leaseId, stickerNumber])
+  @@index([leaseId])
+  @@index([leaseId, status])
+}
+
+model LeaseOccupant {
+  id        String   @id @default(uuid())
+  leaseId   String
+  name      String
+  createdAt DateTime @default(now())
+  lease     Lease    @relation(fields: [leaseId], references: [id], onDelete: Cascade)
+
+  @@index([leaseId])
+}
+
+model LeaseAdditionalTerm {
+  id        String   @id @default(uuid())
+  leaseId   String
+  orgId     String
+  termText  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  lease     Lease    @relation(fields: [leaseId], references: [id], onDelete: Cascade)
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([leaseId])
+  @@index([orgId, leaseId])
+}
+
+model MoveInRequest {
+  id               String            @id @default(uuid())
+  orgId            String
+  buildingId       String
+  unitId           String
+  leaseId          String
+  residentUserId   String
+  status           MoveRequestStatus @default(PENDING)
+  requestedMoveAt  DateTime
+  notes            String?
+  reviewedByUserId String?
+  reviewedAt       DateTime?
+  rejectionReason  String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  org              Org               @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  building         Building          @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  unit             Unit              @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  lease            Lease             @relation(fields: [leaseId], references: [id], onDelete: Cascade)
+  residentUser     User              @relation("MoveInRequestResident", fields: [residentUserId], references: [id], onDelete: Cascade)
+  reviewedByUser   User?             @relation("MoveInRequestReviewer", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, buildingId, status])
+  @@index([leaseId, status])
+  @@index([residentUserId, status])
+}
+
+model MoveOutRequest {
+  id               String            @id @default(uuid())
+  orgId            String
+  buildingId       String
+  unitId           String
+  leaseId          String
+  residentUserId   String
+  status           MoveRequestStatus @default(PENDING)
+  requestedMoveAt  DateTime
+  notes            String?
+  reviewedByUserId String?
+  reviewedAt       DateTime?
+  rejectionReason  String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  org              Org               @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  building         Building          @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  unit             Unit              @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  lease            Lease             @relation(fields: [leaseId], references: [id], onDelete: Cascade)
+  residentUser     User              @relation("MoveOutRequestResident", fields: [residentUserId], references: [id], onDelete: Cascade)
+  reviewedByUser   User?             @relation("MoveOutRequestReviewer", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, buildingId, status])
+  @@index([leaseId, status])
+  @@index([residentUserId, status])
+}
+
+model ParkingSlot {
+  id          String              @id @default(cuid())
+  orgId       String
+  buildingId  String
+  code        String
+  level       String?
+  type        ParkingSlotType
+  isCovered   Boolean             @default(false)
+  isActive    Boolean             @default(true)
+  createdAt   DateTime            @default(now())
+  org         Org                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  building    Building            @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  allocations ParkingAllocation[]
+
+  @@unique([buildingId, code])
+  @@index([orgId, buildingId])
+}
+
+model ParkingAllocation {
+  id            String      @id @default(cuid())
+  orgId         String
+  buildingId    String
+  parkingSlotId String
+  occupancyId   String?
+  unitId        String?
+  startDate     DateTime
+  endDate       DateTime?
+  createdAt     DateTime    @default(now())
+  org           Org         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  building      Building    @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  parkingSlot   ParkingSlot @relation(fields: [parkingSlotId], references: [id], onDelete: Cascade)
+  occupancy     Occupancy?  @relation(fields: [occupancyId], references: [id], onDelete: Cascade)
+  unit          Unit?       @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, buildingId])
+  @@index([orgId, occupancyId])
+  @@index([orgId, unitId])
+  @@index([orgId, createdAt])
+  @@index([orgId, endDate])
+  @@index([parkingSlotId])
+}
+
+model Vehicle {
+  id          String    @id @default(cuid())
+  orgId       String
+  occupancyId String
+  plateNumber String
+  label       String?
+  createdAt   DateTime  @default(now())
+  org         Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  occupancy   Occupancy @relation(fields: [occupancyId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, plateNumber])
+  @@index([orgId, occupancyId])
+}
+
+enum MaintenanceRequestStatus {
+  OPEN
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+  CANCELED
+}
+
+enum MaintenanceRequestOwnerApprovalStatus {
+  NOT_REQUIRED
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum MaintenanceRequestEstimateStatus {
+  NOT_REQUESTED
+  REQUESTED
+  SUBMITTED
+}
+
+enum MaintenanceRequestOwnerApprovalDecisionSource {
+  OWNER
+  MANAGEMENT_OVERRIDE
+  EMERGENCY_OVERRIDE
+}
+
+enum MaintenanceRequestOwnerApprovalAuditAction {
+  REQUIRED
+  REQUESTED
+  RESENT
+  APPROVED
+  REJECTED
+  OVERRIDDEN
+}
+
+enum MaintenanceRequestPriority {
+  LOW
+  NORMAL
+  HIGH
+}
+
+enum MaintenanceRequestType {
+  CLEANING
+  ELECTRICAL
+  MAINTENANCE
+  PLUMBING_AC_HEATING
+  OTHER
+}
+
+enum MaintenanceRequestEmergencySignal {
+  ACTIVE_LEAK
+  NO_POWER
+  SAFETY_RISK
+  NO_COOLING
+}
+
+model MaintenanceRequest {
+  id                                String                                         @id @default(uuid())
+  orgId                             String
+  buildingId                        String
+  unitId                            String?
+  occupancyIdAtCreation             String?
+  leaseIdAtCreation                 String?
+  createdByUserId                   String
+  title                             String
+  description                       String?
+  status                            MaintenanceRequestStatus                       @default(OPEN)
+  type                              MaintenanceRequestType?
+  priority                          MaintenanceRequestPriority?
+  assignedToUserId                  String?
+  serviceProviderId                 String?
+  serviceProviderAssignedUserId     String?
+  estimateStatus                    MaintenanceRequestEstimateStatus               @default(NOT_REQUESTED)
+  estimateRequestedAt               DateTime?
+  estimateRequestedByUserId         String?
+  estimateDueAt                     DateTime?
+  estimateReminderSentAt            DateTime?
+  estimateSubmittedAt               DateTime?
+  estimateSubmittedByUserId         String?
+  ownerApprovalStatus               MaintenanceRequestOwnerApprovalStatus          @default(NOT_REQUIRED)
+  ownerApprovalRequestedAt          DateTime?
+  ownerApprovalRequestedByUserId    String?
+  ownerApprovalDeadlineAt           DateTime?
+  ownerApprovalDecidedAt            DateTime?
+  ownerApprovalDecidedByOwnerUserId String?
+  ownerApprovalReason               String?
+  approvalRequiredReason            String?
+  estimatedAmount                   Decimal?                                       @db.Decimal(12, 2)
+  estimatedCurrency                 String?
+  isEmergency                       Boolean                                        @default(false)
+  emergencySignals                  MaintenanceRequestEmergencySignal[]            @default([])
+  isLikeForLike                     Boolean?
+  isUpgrade                         Boolean?
+  isMajorReplacement                Boolean?
+  isResponsibilityDisputed          Boolean?
+  ownerApprovalDecisionSource       MaintenanceRequestOwnerApprovalDecisionSource?
+  ownerApprovalOverrideReason       String?
+  ownerApprovalOverriddenByUserId   String?
+  assignedAt                        DateTime?
+  completedAt                       DateTime?
+  canceledAt                        DateTime?
+  createdAt                         DateTime                                       @default(now())
+  updatedAt                         DateTime                                       @updatedAt
+  org                               Org                                            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  building                          Building                                       @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  unit                              Unit?                                          @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  occupancyAtCreation               Occupancy?                                     @relation("MaintenanceRequestCreationOccupancy", fields: [occupancyIdAtCreation], references: [id], onDelete: SetNull)
+  leaseAtCreation                   Lease?                                         @relation("MaintenanceRequestCreationLease", fields: [leaseIdAtCreation], references: [id], onDelete: SetNull)
+  createdByUser                     User                                           @relation("MaintenanceRequestCreator", fields: [createdByUserId], references: [id], onDelete: Cascade)
+  assignedToUser                    User?                                          @relation("MaintenanceRequestAssignee", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  serviceProvider                   ServiceProvider?                               @relation(fields: [serviceProviderId], references: [id], onDelete: SetNull)
+  serviceProviderAssignedUser       User?                                          @relation("MaintenanceRequestServiceProviderAssignee", fields: [serviceProviderAssignedUserId], references: [id], onDelete: SetNull)
+  estimateRequestedByUser           User?                                          @relation("MaintenanceRequestEstimateRequester", fields: [estimateRequestedByUserId], references: [id], onDelete: SetNull)
+  estimateSubmittedByUser           User?                                          @relation("MaintenanceRequestEstimateSubmitter", fields: [estimateSubmittedByUserId], references: [id], onDelete: SetNull)
+  ownerApprovalRequestedByUser      User?                                          @relation("MaintenanceRequestOwnerApprovalRequester", fields: [ownerApprovalRequestedByUserId], references: [id], onDelete: SetNull)
+  ownerApprovalDecidedByOwnerUser   User?                                          @relation("MaintenanceRequestOwnerApprovalDecider", fields: [ownerApprovalDecidedByOwnerUserId], references: [id], onDelete: SetNull)
+  ownerApprovalOverriddenByUser     User?                                          @relation("MaintenanceRequestOwnerApprovalOverrider", fields: [ownerApprovalOverriddenByUserId], references: [id], onDelete: SetNull)
+  comments                          MaintenanceRequestComment[]
+  commentReadStates                 MaintenanceRequestCommentReadState[]
+  attachments                       MaintenanceRequestAttachment[]
+  ownerApprovalAudits               MaintenanceRequestOwnerApprovalAudit[]
+  ownerCommentReadStates            OwnerRequestCommentReadState[]
+
+  @@index([orgId, buildingId])
+  @@index([orgId, createdAt])
+  @@index([orgId, completedAt])
+  @@index([orgId, canceledAt])
+  @@index([occupancyIdAtCreation])
+  @@index([leaseIdAtCreation])
+  @@index([createdByUserId])
+  @@index([assignedToUserId])
+  @@index([serviceProviderId])
+  @@index([serviceProviderAssignedUserId])
+  @@index([estimateStatus])
+  @@index([estimateDueAt])
+  @@index([estimateReminderSentAt])
+  @@index([estimateRequestedByUserId])
+  @@index([estimateSubmittedByUserId])
+  @@index([status])
+  @@index([ownerApprovalStatus])
+}
+
+model MaintenanceRequestComment {
+  id            String                              @id @default(uuid())
+  requestId     String
+  orgId         String
+  authorUserId  String
+  authorOwnerId String?
+  authorType    MaintenanceRequestCommentAuthorType
+  visibility    MaintenanceRequestCommentVisibility @default(SHARED)
+  message       String
+  createdAt     DateTime                            @default(now())
+  request       MaintenanceRequest                  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  org           Org                                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  authorUser    User                                @relation(fields: [authorUserId], references: [id], onDelete: Cascade)
+  authorOwner   Owner?                              @relation("MaintenanceRequestCommentOwner", fields: [authorOwnerId], references: [id], onDelete: SetNull)
+
+  @@index([requestId])
+  @@index([requestId, visibility, createdAt])
+  @@index([authorUserId])
+  @@index([authorOwnerId])
+}
+
+model OwnerRequestCommentReadState {
+  id         String             @id @default(uuid())
+  userId     String
+  requestId  String
+  lastReadAt DateTime
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+  user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  request    MaintenanceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, requestId])
+  @@index([userId, lastReadAt])
+  @@index([requestId])
+}
+
+model MaintenanceRequestCommentReadState {
+  id         String                             @id @default(uuid())
+  userId     String
+  requestId  String
+  scope      MaintenanceRequestCommentReadScope
+  lastReadAt DateTime
+  createdAt  DateTime                           @default(now())
+  updatedAt  DateTime                           @updatedAt
+  user       User                               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  request    MaintenanceRequest                 @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, requestId, scope])
+  @@index([userId, scope, lastReadAt])
+  @@index([requestId, scope])
+}
+
+model MaintenanceRequestAttachment {
+  id               String             @id @default(uuid())
+  requestId        String
+  orgId            String
+  uploadedByUserId String
+  fileName         String
+  mimeType         String
+  sizeBytes        Int
+  url              String
+  createdAt        DateTime           @default(now())
+  request          MaintenanceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  org              Org                @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  uploadedByUser   User               @relation(fields: [uploadedByUserId], references: [id], onDelete: Cascade)
+
+  @@index([requestId])
+}
+
+model MaintenanceRequestOwnerApprovalAudit {
+  id             String                                         @id @default(uuid())
+  requestId      String
+  orgId          String
+  actorUserId    String?
+  action         MaintenanceRequestOwnerApprovalAuditAction
+  fromStatus     MaintenanceRequestOwnerApprovalStatus?
+  toStatus       MaintenanceRequestOwnerApprovalStatus
+  decisionSource MaintenanceRequestOwnerApprovalDecisionSource?
+  reason         String?
+  createdAt      DateTime                                       @default(now())
+  request        MaintenanceRequest                             @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  org            Org                                            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  actorUser      User?                                          @relation("MaintenanceRequestOwnerApprovalAuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([requestId, createdAt])
+  @@index([orgId, createdAt])
+}
+
+enum MaintenanceRequestCommentAuthorType {
+  OWNER
+  TENANT
+  STAFF
+  SYSTEM
+}
+
+enum MaintenanceRequestCommentVisibility {
+  SHARED
+  INTERNAL
+}
+
+enum MaintenanceRequestCommentReadScope {
+  BUILDING
+  PROVIDER
+}
+
+enum NotificationType {
+  REQUEST_CREATED
+  REQUEST_ASSIGNED
+  REQUEST_STATUS_CHANGED
+  REQUEST_COMMENTED
+  REQUEST_CANCELED
+  ESTIMATE_REMINDER
+  OWNER_APPROVAL_REQUESTED
+  OWNER_APPROVAL_REMINDER
+  OWNER_REQUEST_APPROVED
+  OWNER_REQUEST_REJECTED
+  OWNER_REQUEST_OVERRIDDEN
+  OWNER_ACCESS_GRANTED
+  OWNER_ACCESS_DISABLED
+  MOVE_IN_REQUEST_CREATED
+  MOVE_OUT_REQUEST_CREATED
+  VISITOR_ARRIVED
+  BROADCAST
+  CONVERSATION_CREATED
+  MESSAGE_CREATED
+}
+
+model Notification {
+  id              String           @id @default(uuid())
+  orgId           String
+  recipientUserId String
+  type            NotificationType
+  title           String
+  body            String?
+  data            Json
+  readAt          DateTime?
+  dismissedAt     DateTime?
+  createdAt       DateTime         @default(now())
+  org             Org              @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  recipientUser   User             @relation("NotificationRecipient", fields: [recipientUserId], references: [id], onDelete: Cascade)
+
+  @@index([recipientUserId, createdAt])
+  @@index([orgId, recipientUserId])
+  @@index([orgId, recipientUserId, readAt, createdAt])
+  @@index([orgId, recipientUserId, dismissedAt, createdAt])
+}
+
+model Broadcast {
+  id             String   @id @default(uuid())
+  orgId          String
+  senderUserId   String
+  title          String
+  body           String?
+  buildingIds    String[]
+  recipientCount Int      @default(0)
+  metadata       Json?
+  createdAt      DateTime @default(now())
+
+  org        Org  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  senderUser User @relation("BroadcastSender", fields: [senderUserId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, createdAt])
+  @@index([senderUserId])
+}
+
+enum ConversationType {
+  MANAGEMENT_INTERNAL
+  MANAGEMENT_TENANT
+  MANAGEMENT_OWNER
+  OWNER_TENANT
+}
+
+enum ConversationCounterpartyGroup {
+  STAFF
+  TENANT
+  OWNER
+  MIXED
+}
+
+model Conversation {
+  id                String                        @id @default(uuid())
+  orgId             String
+  buildingId        String?
+  type              ConversationType
+  counterpartyGroup ConversationCounterpartyGroup
+  subject           String?
+  createdAt         DateTime                      @default(now())
+  updatedAt         DateTime                      @updatedAt
+
+  org          Org                       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  building     Building?                 @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  participants ConversationParticipant[]
+  messages     Message[]
+
+  @@index([orgId, updatedAt])
+  @@index([orgId, type, updatedAt])
+  @@index([orgId, counterpartyGroup, updatedAt])
+  @@index([buildingId])
+}
+
+model ConversationParticipant {
+  id             String    @id @default(uuid())
+  conversationId String
+  userId         String
+  lastReadAt     DateTime?
+  createdAt      DateTime  @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+}
+
+model Message {
+  id             String   @id @default(uuid())
+  conversationId String
+  senderUserId   String
+  content        String
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderUser   User         @relation("MessageSender", fields: [senderUserId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  @@index([senderUserId])
+}
+
+model RoleTemplate {
+  id              String                   @id @default(uuid())
+  orgId           String?
+  key             String
+  name            String
+  description     String?
+  isSystem        Boolean                  @default(true)
+  scopeType       AccessScopeType          @default(ORG)
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+  org             Org?                     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  rolePermissions RoleTemplatePermission[]
+  assignments     UserAccessAssignment[]
+
+  @@unique([orgId, key])
+  @@index([orgId])
+  @@index([orgId, scopeType])
+  @@map("Role")
+}
+
+model Permission {
+  id              String                   @id @default(uuid())
+  key             String                   @unique
+  name            String
+  description     String?
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+  rolePermissions RoleTemplatePermission[]
+  userPermissions UserPermission[]
+}
+
+model RoleTemplatePermission {
+  roleTemplateId String       @map("roleId")
+  permissionId   String
+  createdAt      DateTime     @default(now())
+  roleTemplate   RoleTemplate @relation(fields: [roleTemplateId], references: [id], onDelete: Cascade)
+  permission     Permission   @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleTemplateId, permissionId])
+  @@map("RolePermission")
+}
+
+model UserAccessAssignment {
+  id             String          @id @default(uuid())
+  userId         String
+  roleTemplateId String
+  scopeType      AccessScopeType
+  scopeId        String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roleTemplate   RoleTemplate    @relation(fields: [roleTemplateId], references: [id], onDelete: Cascade)
+  buildingScope  Building?       @relation("BuildingScopedAccessAssignments", fields: [scopeId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([roleTemplateId])
+  @@index([scopeType, scopeId])
+  @@index([userId, scopeType, scopeId])
+}
+
+enum PermissionEffect {
+  ALLOW
+  DENY
+}
+
+model UserPermission {
+  userId       String
+  permissionId String
+  effect       PermissionEffect
+  createdAt    DateTime         @default(now())
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permission   Permission       @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([userId, permissionId])
+}

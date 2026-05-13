@@ -1,0 +1,21 @@
+field,required,type,acceptedValues,example,notes
+label,yes,text,Any non-empty unique label,A-101,Required. Must be unique inside the CSV. In create mode it must also not already exist in the building.
+floor,no,integer,"Whole number, 0 or greater",3,Optional integer field.
+unitType,no,text,Any active unit type name in your org,Apartment,"Resolved by name, case-insensitive after trimming. If the name is not found in the org, import fails for that row."
+notes,no,text,Free text,Near elevator,Optional free-text note.
+bedrooms,no,integer,"Whole number, 0 or greater",2,Optional integer field.
+bathrooms,no,integer,"Whole number, 0 or greater",2,Optional integer field.
+unitSize,no,number,"Number, 0 or greater",950,Optional decimal/number field.
+unitSizeUnit,no,enum,SQ_FT,SQ_FT,"Case-insensitive. Spaces and hyphens are normalized to underscores before validation."
+furnishedStatus,no,enum,UNFURNISHED | SEMI_FURNISHED | FULLY_FURNISHED,SEMI_FURNISHED,"Case-insensitive. Spaces and hyphens are normalized to underscores before validation."
+balcony,no,boolean,true | false | yes | no | 1 | 0 | y | n,true,Accepted boolean spellings are listed exactly in acceptedValues.
+kitchenType,no,enum,OPEN | CLOSED,OPEN,"Case-insensitive. Spaces and hyphens are normalized to underscores before validation."
+rentAnnual,no,number,"Number, 0 or greater",72000,Optional decimal/number field.
+paymentFrequency,no,enum,MONTHLY | QUARTERLY | SEMI_ANNUAL | ANNUAL,MONTHLY,"Case-insensitive. Spaces and hyphens are normalized to underscores before validation."
+securityDepositAmount,no,number,"Number, 0 or greater",5000,Optional decimal/number field.
+serviceChargePerUnit,no,number,"Number, 0 or greater",1200,Optional decimal/number field.
+vatApplicable,no,boolean,true | false | yes | no | 1 | 0 | y | n,false,Accepted boolean spellings are listed exactly in acceptedValues.
+maintenancePayer,no,enum,OWNER | TENANT | BUILDING,TENANT,"Case-insensitive. Spaces and hyphens are normalized to underscores before validation."
+electricityMeterNumber,no,text,Free text,ELEC-101,Optional free-text meter identifier.
+waterMeterNumber,no,text,Free text,WATER-101,Optional free-text meter identifier.
+gasMeterNumber,no,text,Free text,GAS-101,Optional free-text meter identifier.

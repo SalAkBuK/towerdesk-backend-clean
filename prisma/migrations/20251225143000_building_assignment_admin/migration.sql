@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "BuildingAssignmentType" ADD VALUE IF NOT EXISTS 'BUILDING_ADMIN';

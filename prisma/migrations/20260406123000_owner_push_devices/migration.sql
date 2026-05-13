@@ -1,0 +1,2 @@
+ALTER TABLE "PushDevice"
+ALTER COLUMN "orgId" DROP NOT NULL;

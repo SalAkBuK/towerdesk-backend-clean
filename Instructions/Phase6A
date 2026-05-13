@@ -1,0 +1,295 @@
+You are working in a NestJS + TypeScript backend with Prisma + PostgreSQL.
+
+Context (already implemented)
+- Org scoping: req.user.orgId derived from DB/JWT; cross-org resources return 404.
+- Global RBAC (roles/permissions + allow/deny overrides) is GLOBAL only.
+- BuildingAccessGuard/Service enforces:
+  - org ownership first (404 if not in org)
+  - then access via global RBAC OR building assignment types
+  - BUILDING_ADMIN can write without global perms (where policy allows)
+  - MANAGER write requires explicit global permission key for the action
+- Models exist:
+  - Org, User (orgId, mustChangePassword)
+  - Building, Unit
+  - BuildingAssignment (MANAGER/STAFF/BUILDING_ADMIN)
+  - Occupancy (ACTIVE/ENDED) linking resident user -> unit/building
+- Endpoints exist for buildings/units/assignments/occupancies/residents onboarding, units availability filters, and resident-safe unit/basic endpoint.
+
+Task: Phase 6A — Maintenance Requests MVP (requests + assignment + status + comments + attachments metadata)
+
+Goal
+Implement the core maintenance request workflow:
+- Resident creates a request for their building/unit (with optional attachments metadata).
+- Building Manager / Building Admin can view requests for their building and assign to Staff.
+- Staff can update status and mark complete.
+- Resident/Manager/Staff can comment on the request (conversation thread).
+- All access is org-scoped + building-scoped as appropriate; residents only see their own requests.
+
+IMPORTANT policy
+- Managers can perform WRITE actions only if granted explicit global permission keys by ORG_ADMIN (except where BUILDING_ADMIN shortcut is allowed).
+- STAFF can update only requests assigned to them (unless they have a global permission allowing broader access).
+
+Deliverables
+
+A) Prisma schema + migration
+
+1) Add models/enums:
+
+Enum: MaintenanceRequestStatus
+- OPEN
+- ASSIGNED
+- IN_PROGRESS
+- COMPLETED
+- CANCELED
+
+Model: MaintenanceRequest
+- id (cuid/uuid)
+- orgId (FK -> Org.id)            // direct org scoping
+- buildingId (FK -> Building.id)
+- unitId (FK -> Unit.id, nullable) // if resident request tied to unit; keep nullable for future admin-created building-level requests
+- createdByUserId (FK -> User.id)  // resident user who created
+- title (string)
+- description (string, nullable)
+- status (enum MaintenanceRequestStatus, default OPEN)
+- priority (enum optional: LOW|NORMAL|HIGH, optional)
+- assignedToUserId (FK -> User.id, nullable) // staff user
+- assignedAt (DateTime nullable)
+- completedAt (DateTime nullable)
+- canceledAt (DateTime nullable)
+- createdAt, updatedAt
+Indexes:
+- (orgId, buildingId)
+- createdByUserId
+- assignedToUserId
+- status
+
+Model: MaintenanceRequestComment
+- id
+- requestId (FK -> MaintenanceRequest.id)
+- orgId (FK -> Org.id)
+- authorUserId (FK -> User.id)
+- message (string)
+- createdAt
+Indexes:
+- requestId
+- authorUserId
+
+Model: MaintenanceRequestAttachment (metadata only for MVP)
+- id
+- requestId (FK)
+- orgId (FK)
+- uploadedByUserId (FK)
+- fileName (string)
+- mimeType (string)
+- sizeBytes (int)
+- url (string) or storageKey (string)  // for now accept a URL (e.g., temporary/local) OR storeKey; do NOT implement real S3 in this phase
+- createdAt
+Indexes:
+- requestId
+
+Migration included.
+
+B) Authorization rules (must be explicit and enforced)
+
+2) Define access rules by role/scope:
+
+Resident:
+- Can CREATE request only for their own active occupancy building/unit.
+- Can READ only requests they created.
+- Can UPDATE request details only when status is OPEN (optional: allow while ASSIGNED too) and only if they created it.
+- Can CANCEL only if they created it and status not COMPLETED/CANCELED.
+- Can COMMENT on their own requests while not CANCELED (allow until COMPLETED too, per product decision; default allow until COMPLETED).
+
+Building Staff:
+- Can READ requests assigned to them (within org/buildings they are assigned to).
+- Can UPDATE STATUS only for requests assigned to them:
+  - ASSIGNED -> IN_PROGRESS -> COMPLETED
+  - cannot cancel
+- Can COMMENT on assigned requests.
+
+Building Manager:
+- Can READ all requests in buildings they are assigned to (MANAGER or BUILDING_ADMIN).
+- Can ASSIGN requests to staff for buildings they manage only if they have explicit permission key: requests.assign (unless BUILDING_ADMIN shortcut allows).
+- Can UPDATE STATUS for building-level operations only if permission key: requests.update_status (unless BUILDING_ADMIN shortcut allows).
+- Can BROADCAST later (not in this phase).
+
+BUILDING_ADMIN:
+- Can READ/WRITE for their building without global keys where your building policy allows.
+- Specifically allow: assign staff, update status, edit request (if needed) for that building.
+
+ORG_ADMIN:
+- Can READ/WRITE across org via global permissions.
+
+C) API endpoints (org-scoped and building-scoped)
+
+3) Resident endpoints (resident-facing)
+Use occupancy-based checks; do NOT use generic building-scoped admin routes.
+
+- POST /resident/requests
+  Body: { title: string, description?: string, attachments?: [{ fileName, mimeType, sizeBytes, url }] }
+  Behavior:
+  - Derive orgId from req.user
+  - Find ACTIVE occupancy for req.user (for now assume exactly one active occupancy; if multiple, require buildingId in request body later)
+  - Create MaintenanceRequest with buildingId/unitId from occupancy
+  - status = OPEN
+  - Create attachment metadata records if provided
+  Return: request summary
+
+- GET /resident/requests
+  Returns requests createdByUserId = req.user.id (with building/unit + status + assignedTo basic info)
+
+- GET /resident/requests/:requestId
+  Must belong to createdByUserId and orgId
+
+- PATCH /resident/requests/:requestId
+  Allow updating title/description only if createdByUserId and status in {OPEN} (or {OPEN, ASSIGNED} if you choose). Default: OPEN only.
+
+- POST /resident/requests/:requestId/cancel
+  Allow cancel if createdByUserId and status not in {COMPLETED, CANCELED}
+  Set status=CANCELED, canceledAt=now
+
+- POST /resident/requests/:requestId/comments
+  Allow if createdByUserId and status != CANCELED
+  Create comment
+
+- GET /resident/requests/:requestId/comments
+  Allow if createdByUserId
+
+(Resident attachments can be included in GET detail; no upload handling beyond metadata.)
+
+4) Building ops endpoints (manager/admin/staff)
+These are building-scoped; use BuildingAccessGuard + required permission keys.
+
+- GET /org/buildings/:buildingId/requests
+  READ allowed via:
+  - global permission requests.read OR
+  - building assignment STAFF/MANAGER/BUILDING_ADMIN read
+  Additionally for STAFF: either allow read for all building requests OR restrict to assignedToUserId=self.
+  Default: restrict STAFF to assignedToUserId=self unless they have requests.read.
+
+- GET /org/buildings/:buildingId/requests/:requestId
+  Same rules; ensure request belongs to buildingId and orgId.
+
+- POST /org/buildings/:buildingId/requests/:requestId/assign
+  Body: { staffUserId: string }
+  Rules:
+  - request belongs to buildingId & orgId
+  - staffUserId belongs to same org and is assigned to that building as STAFF (or has STAFF assignment)
+  - Set assignedToUserId, assignedAt=now, status=ASSIGNED (if currently OPEN)
+  Authorization:
+  - ORG_ADMIN with requests.assign OR
+  - BUILDING_ADMIN assignment (allow) OR
+  - MANAGER only if has global permission requests.assign
+
+- POST /org/buildings/:buildingId/requests/:requestId/status
+  Body: { status: "IN_PROGRESS" | "COMPLETED" }
+  Rules:
+  - If caller is STAFF: only allowed if request.assignedToUserId == caller.id
+  - Transition rules:
+    - ASSIGNED -> IN_PROGRESS
+    - IN_PROGRESS -> COMPLETED
+  Set completedAt if COMPLETED.
+  Authorization:
+  - STAFF assigned-to-self: allowed without global perms
+  - BUILDING_ADMIN: allowed
+  - MANAGER: only with requests.update_status
+  - ORG_ADMIN: via global perms
+
+- POST /org/buildings/:buildingId/requests/:requestId/comments
+  Allow:
+  - BUILDING_ADMIN
+  - MANAGER (requests.comment permission optional; default allow via building read access)
+  - STAFF only if assigned to request
+  - (Residents should use /resident endpoints)
+  Create comment
+
+- GET /org/buildings/:buildingId/requests/:requestId/comments
+  Similar read rules.
+
+- (Optional MVP) GET /org/buildings/:buildingId/requests?status=OPEN|ASSIGNED|...
+  Simple query filter.
+
+5) Error/response semantics
+- 404 for cross-org/building mismatch
+- 403 for in-org but insufficient scope/permission
+- 409 for invalid state transitions (e.g., complete without in-progress)
+- 400 for validation issues
+
+D) Permissions and seeding
+
+6) Add permission keys and map to ORG_ADMIN in seed.ts:
+- requests.read
+- requests.write (optional; for editing requests by ops)
+- requests.assign
+- requests.update_status
+- requests.comment (optional; can be implied by read)
+Resident endpoints should not require these global keys; they are protected by occupancy/ownership checks.
+
+Manager write rule:
+- MANAGER can assign/update only if granted the relevant global permission key (requests.assign, requests.update_status).
+- BUILDING_ADMIN can do these without global permissions.
+
+E) Implementation structure
+
+7) Modules
+Create modules with repo/service/controller pattern:
+- maintenance-requests.module.ts
+- resident-requests.controller.ts (resident endpoints)
+- building-requests.controller.ts (ops endpoints under /org/buildings/:buildingId)
+- comments/attachments can be sub-services or in same module; keep it simple.
+
+Use DTOs with class-validator.
+Use transactions for multi-write operations (create request + attachments; assign + status change).
+
+F) E2E tests
+
+8) Add E2E suite(s) that cover:
+Setup:
+- Org A, Building A1, Unit U1, U2
+- Users:
+  - orgAdminA
+  - managerA (MANAGER assignment in A1; initially no requests.assign)
+  - buildingAdminA (BUILDING_ADMIN in A1)
+  - staffA (STAFF in A1)
+  - residentA onboarded into U1 (ACTIVE occupancy)
+  - orgAdminB and Building B1 for cross-org checks
+
+Tests:
+1) Resident creates request:
+  - POST /resident/requests creates OPEN request tied to buildingId/unitId from occupancy
+  - Resident can list and view own requests
+2) Cross-org safety:
+  - orgAdminB cannot access A1 requests endpoints (404)
+3) Staff visibility:
+  - staffA cannot see all building requests by default (either 403 or empty list) unless policy allows; enforce your chosen policy
+  - staffA can see request only after assigned
+4) Assignment:
+  - managerA without requests.assign cannot assign (403)
+  - grant managerA requests.assign via override; then assign succeeds
+  - buildingAdminA can assign without global permission
+5) Status updates:
+  - staffA can move ASSIGNED -> IN_PROGRESS -> COMPLETED only when assigned
+  - managerA can update status only with requests.update_status (or BUILDING_ADMIN)
+6) Comments:
+  - residentA can comment on own request
+  - staffA can comment only when assigned
+  - buildingAdminA can comment
+7) Resident cancel:
+  - residentA cancels OPEN request -> status=CANCELED
+  - cannot cancel COMPLETED
+
+Run the suite with npm test (note Windows Prisma lock caveat if applicable).
+
+G) README update
+
+9) Document:
+- Resident request flow endpoints
+- Ops flow endpoints
+- Permission keys and manager write rule
+- Status transition diagram (simple list)
+
+Output requirements
+- Provide code changes: schema + migration + modules/controllers/services/repos/DTOs + seed + E2E tests + README update.
+- Run tests and note commands used.
+
+Now implement Phase 6A.
